@@ -19,8 +19,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          # npm Trusted Publishing requires Node.js 22.14 or newer.
-          node-version: 24
+          node-version: 20
           registry-url: https://registry.npmjs.org
           cache: npm
 
@@ -29,6 +28,14 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Use Node.js for Trusted Publishing
+        uses: actions/setup-node@v6
+        with:
+          # npm Trusted Publishing requires Node.js 22.14 or newer.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Check whether this version is already published
         id: package
