@@ -1,241 +1,215 @@
 # split-commit
 
-`split-commit` makes large refactors easier to investigate by classifying a
-Git working tree according to semantic intent:
-
-- **A — behavioral / logic changes:** anything that may affect runtime behavior,
-  data flow, control flow, API contracts, side effects, or anything the tool
-  cannot prove safe.
-- **B — mechanical / structural refactors:** only changes backed by strong,
-  explainable evidence that source meaning was preserved.
-
-The desired history is:
+`split-commit` separates a mixed JavaScript/TypeScript refactor into two commits:
 
 ```text
-commit A  actual behavioral / logic changes
-commit B  provably mechanical structural refactor
+A  code changes that may change behavior, plus anything uncertain
+B  structural changes the tool can verify with high confidence
 ```
 
-This is not merely a diff splitter. Its purpose is to separate semantic intent
-so that, after a large refactor, regression investigation can start with commit
-A when commit B has passed conservative mechanical checks.
+This is useful when one refactor mixes real code changes with file moves and import-path updates. If something breaks later, the Git history is easier to inspect because the mechanical cleanup is separated from the changes that could have changed behavior.
 
-## Conservative policy
+For example, suppose you:
+
+1. move `src/lib/cache.ts` to `src/state/cache.ts`
+2. update every import that points to it
+3. change the cache invalidation logic
+
+`split-commit` aims to produce this history:
 
 ```text
-high-confidence, explainable semantics preservation  → B
-anything unresolved, unsafe, or unsupported          → A
+commit A  change cache invalidation logic
+commit B  move cache.ts and update its import paths
 ```
 
-The report displays ambiguous items separately for review, but the split policy
-assigns them to A. False negatives are acceptable in the initial version; false
-positives in B are not.
+If the tool cannot confidently show that a change belongs in B, it puts that change in A.
 
-JavaScript and TypeScript do not permit a general formal equivalence proof.
-Module initialization order, side-effect imports, dynamic imports,
-`import.meta`, `__dirname`, `__filename`, `require()`, reflection, string-based
-module references, and bundler-specific transforms can all be observable.
-The classifier therefore certifies a narrow set and rejects or defers everything else.
+## What goes into A and B
 
-## Implemented phases
+### A: behavior changes and uncertain changes
 
-### Phase 1 — semantic classification
+A is the safe default. It can include:
 
-Implemented:
+- changes to function or class logic
+- changes to control flow, data flow, side effects, or API shape
+- new or deleted source files that do not have a proven move partner
+- non-JavaScript/TypeScript changes
+- formatting-only changes that are not currently certified
+- anything the classifier cannot understand well enough to put in B
 
-- Git `HEAD` versus working-tree collection, including staged, unstaged, and
-  untracked files
-- Git rename hints plus independent delete/add move discovery
-- normalized TypeScript/JavaScript AST and comment comparison
-- TypeScript Compiler API module resolution using `tsconfig.json`, `baseUrl`,
-  `paths`, relative imports, extension lookup, and `index.ts` lookup
-- content-preserving file move classification
-- import, export, and barrel path update classification when both sides resolve
-  to the same file identity or a proven move pair
-- mixed-file reporting: a proven import-path update can be B while the remaining
-  AST edit in the same file is A
-- human-readable reasons, verbose resolution evidence, and JSON output
-- end-to-end tests that create real temporary Git repositories
+The report may show some items as `ambiguous` for review, but they are still assigned to A when the split is generated.
 
-### Phase 2 — patch generation and safe staging
+### B: verified structural changes
 
-- sequential patch synthesis:
-  - `commit-a.patch`: `HEAD` → behavioral/ambiguous intermediate tree
-  - `commit-b.patch`: intermediate A tree → complete working-tree result
-- AST-span mixed-file splitting: only proven module specifiers are withheld from A
-- temporary Git indexes and `write-tree` verification for every generated state
-- temporary object databases, so report/dry-run/artifact planning does not add
-  unreachable objects to the analyzed repository
-- SHA-256, byte count, file count, base commit, and target tree IDs in a manifest
-- atomic artifact writes under `.split-commit/` by default
-- `stage-a` and `stage-b` commands that preserve the complete working tree
-- `apply` command that stages and commits A, reanalyzes, then stages and commits B
-- clean-index precondition: existing staged changes are rejected without modification
-- enforced order: B cannot be staged while A candidates remain
-- post-commit tree verification: if a Git hook changes A or the working tree,
-  automatic B processing stops
-- file modes, symlinks, additions, deletions, renames, and binary Git patches
+B currently focuses on a narrow set of refactors that can be checked conservatively:
 
-Deliberately deferred to later phases:
+- moving or renaming a TypeScript/JavaScript file without changing its code or comments
+- updating `import` and `export` paths to follow a verified file move
+- updating paths through barrel files such as `index.ts`, when the old and new paths can both be resolved safely
 
-- symbol rename and reference-identity proof
-- declaration/function/class moves between files
-- configurable typecheck/test validation hooks
-- standalone formatting/import-sort certification
+A changed path string is not enough by itself. The tool resolves the old and new imports and checks that they still point to the same module, or to a file whose move was independently verified.
 
-## Installation and use
+A single file can contain both kinds of changes. For example, if `App.ts` changes an import path and also changes component logic, the logic can go to A while the verified import-path edit goes to B.
 
-Requirements: Git and Node.js 20 or newer.
+## Why the classifier is conservative
 
-### Install on another computer
+Putting a real behavior change in B would make the split misleading. Putting a harmless refactor in A is less convenient, but it does not weaken the safety of B.
 
-After cloning or copying this repository onto the other computer:
+JavaScript and TypeScript also have cases where moving a file or changing a path can affect runtime behavior. Dynamic imports, `require()`, `import.meta`, `__dirname`, `__filename`, side-effect-only imports, reflection, string-based module references, and bundler-specific behavior can all make a seemingly simple refactor observable.
+
+When one of these cases cannot be verified safely, `split-commit` falls back to A.
+
+## Installation
+
+Requirements:
+
+- Git
+- Node.js 20 or newer
+
+Clone the repository and install the CLI globally:
 
 ```bash
+git clone https://github.com/leesj-dev/split-commit.git
+cd split-commit
 npm ci
 npm run build
 npm install -g .
 
-# Confirm that the CLI is on PATH.
 split-commit --help
-
-# Add the Git-style command for the current user on that computer.
-git config --global alias.split-commit '!split-commit apply'
-
-# Confirm the integration without creating commits.
-git split-commit --dry-run
 ```
 
-`npm install -g .` installs the built checkout as a normal global package. For
-development, use `npm link` instead so edits in the checkout are reflected
-without reinstalling:
+For development, use `npm link` instead of `npm install -g .` so local changes are available without reinstalling:
 
 ```bash
 npm ci
 npm run build
 npm link
+```
+
+### Optional Git alias
+
+You can expose `split-commit apply` as `git split-commit`:
+
+```bash
 git config --global alias.split-commit '!split-commit apply'
 ```
 
-If the repository itself cannot be cloned on the destination computer, create
-a package archive and transfer that single file:
+Then run:
 
 ```bash
-# On the source computer
-npm ci
-npm run build
-npm pack
-
-# Copy split-commit-0.3.0.tgz to the destination computer, then run there
-npm install -g ./split-commit-0.3.0.tgz
-git config --global alias.split-commit '!split-commit apply'
-git split-commit --dry-run
+git split-commit
+git split-commit "Custom A message"
+git split-commit "Custom A message" "Custom B message"
 ```
 
-The alias is stored in that computer's user-level Git configuration. It works
-in every repository for that user, but must be registered once per computer.
-Inspect or remove the installation with:
+Remove the alias or global package with:
 
 ```bash
-git config --global --get alias.split-commit
 git config --global --unset alias.split-commit
 npm uninstall -g split-commit
 ```
 
-### Commands
+## Quick start
+
+Run these commands inside the repository you want to analyze.
+
+The repository must already have at least one commit because `split-commit` compares the current working tree with `HEAD`.
+
+Start by seeing how the changes are classified:
 
 ```bash
 split-commit report
+```
+
+For more detail:
+
+```bash
 split-commit report --verbose
-split-commit report --json
-split-commit split --dry-run --verbose
-split-commit split
-split-commit stage-a
-split-commit stage-b
+```
+
+Before letting the tool create commits, preview the full A -> B plan:
+
+```bash
+split-commit apply --dry-run
+```
+
+Then apply it:
+
+```bash
 split-commit apply
-
-# Equivalent one-command Git alias after the setup above
-git split-commit
-git split-commit "Custom A"
-git split-commit "Custom A" "Custom B"
 ```
 
-Run against another repository without changing directory:
+`apply` stages and commits A first, analyzes the remaining changes again, then stages and commits B.
 
-```bash
-split-commit report --cwd /path/to/repository
-```
-
-The repository needs an initial commit because analysis compares `HEAD` with
-the complete current working tree.
-
-## Safe A → B workflow
-
-Start with a clean index. Staged, unstaged, and untracked working-tree content
-may be analyzed, but staging commands intentionally refuse a pre-existing index
-so they cannot overwrite the user's staged state.
-
-```bash
-# 1. Inspect classifications and generated patch metadata. No writes.
-split-commit split --dry-run --verbose
-
-# 2. Optionally write sequential patches, report.json, and manifest.json.
-#    This does not touch the index.
-split-commit split
-
-# 3. Stage only behavioral and ambiguous changes.
-split-commit stage-a
-git diff --cached
-git commit -m "behavioral changes"
-
-# 4. Reanalyze against the new HEAD, then stage the mechanical remainder.
-split-commit stage-b
-git diff --cached
-git commit -m "mechanical structural refactor"
-```
-
-`stage-b` must be rerun after committing A. If A candidates still exist, it
-exits without changing the index. Neither staging command commits automatically.
-
-### One-command apply
-
-`apply` performs the complete workflow: analyze → stage/commit A → reanalyze →
-stage/commit B. Commit messages are positional and assigned from A to B:
-
-```bash
-# Both default messages
-split-commit apply
-
-# Custom A message; B keeps its default
-split-commit apply "Implement cache behavior"
-
-# Custom A and B messages
-split-commit apply \
-  "Implement cache behavior" \
-  "Move cache context into state module"
-
-# The configured Git alias has the same argument rules
-git split-commit \
-  "Implement cache behavior" \
-  "Move cache context into state module"
-```
-
-Default messages:
+Default commit messages are:
 
 ```text
 A  Apply behavioral changes
 B  Apply mechanical structural refactor
 ```
 
-An empty A or B patch is skipped without creating an empty commit. Use
-`split-commit apply --dry-run` to see the resolved messages and planned
-commits without staging or committing anything. Existing Git hooks run normally;
-the command verifies each resulting tree and does not continue to B if commit A
-or the working tree differs from the verified plan.
+You can replace either message:
 
-### Patch artifacts
+```bash
+split-commit apply \
+  "Implement cache invalidation" \
+  "Move cache module into state"
+```
 
-By default `split` writes:
+If A or B is empty, that commit is skipped.
+
+## Safety rules
+
+Commands that stage changes require the Git index to be clean before they start. In practical terms, you should not already have changes staged with `git add`.
+
+Your unstaged and untracked files can still be analyzed. Those are part of the working tree that `split-commit` is trying to separate.
+
+The tool also verifies the planned Git tree before continuing. If a Git hook changes commit A, or the working tree changes after A is committed, automatic processing stops before B.
+
+## Manual A -> B workflow
+
+Use the staging commands when you want to inspect and commit each part yourself:
+
+```bash
+# 1. Stage behavior-changing and uncertain changes.
+split-commit stage-a
+git diff --cached
+git commit -m "behavioral changes"
+
+# 2. Analyze the remaining changes again and stage the verified refactor.
+split-commit stage-b
+git diff --cached
+git commit -m "mechanical structural refactor"
+```
+
+`stage-b` must be run after A has been committed. If A candidates still remain, it exits without changing the index.
+
+Neither `stage-a` nor `stage-b` creates a commit automatically.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `split-commit report` | Shows which changes are classified as A, B, or ambiguous |
+| `split-commit report --verbose` | Shows the evidence behind each classification |
+| `split-commit report --json` | Prints the report as JSON |
+| `split-commit split --dry-run` | Builds and displays the split plan without writing files or staging changes |
+| `split-commit split` | Writes A/B patch files and verification metadata |
+| `split-commit stage-a` | Stages only A |
+| `split-commit stage-b` | Stages only B after A has been committed |
+| `split-commit apply` | Creates A and B commits in order |
+
+Use `--cwd` to analyze another repository without changing directories:
+
+```bash
+split-commit report --cwd /path/to/repository
+```
+
+`--dry-run` also works with `stage-a`, `stage-b`, and `apply`.
+
+## Patch files
+
+Running `split-commit split` writes these files by default:
 
 ```text
 .split-commit/
@@ -245,55 +219,74 @@ By default `split` writes:
   report.json
 ```
 
-Use `--output-dir <path>` to choose a different location. The B artifact is a
-sequential patch whose base is the A target tree, not an independent patch
-against the original `HEAD`. The manifest records this chain through tree IDs
-and patch hashes.
+`commit-a.patch` describes the change from `HEAD` to the A-only version of the project.
 
-### Explanation example
+`commit-b.patch` starts from that A version and applies the remaining verified structural changes. It assumes A has already been applied; it is not a separate patch against the original `HEAD`.
+
+`manifest.json` records hashes, file counts, commit IDs, and Git tree IDs used to verify the generated plan. `report.json` contains the classification results.
+
+Choose another output directory with:
+
+```bash
+split-commit split --output-dir /path/to/output
+```
+
+## Reading a classification
+
+Verbose output can include entries like this:
 
 ```text
 import-path-update      src/App.ts:4
   Reason: Both specifiers resolve to the same module identity or a proven file move
-  - old "@/common/lib/DataCacheContext" → src/common/lib/DataCacheContext.tsx
-  - new "@/common/state/DataCacheContext" → src/common/state/DataCacheContext.tsx
+  - old "@/common/lib/DataCacheContext" -> src/common/lib/DataCacheContext.tsx
+  - new "@/common/state/DataCacheContext" -> src/common/state/DataCacheContext.tsx
 ```
 
-## How the proof boundary works
+In plain terms, the import text changed, but the resolver showed that the old and new paths refer to the corresponding module before and after a verified move. That gives the tool enough evidence to put this path edit in B.
 
-A file-move candidate must pass all of these checks:
+## How B is verified
 
-1. Its normalized AST and comment tokens match after static module specifiers
-   are canonicalized.
-2. Candidate matching is one-to-one; duplicate delete/add matches are rejected.
-3. It contains no path-sensitive construct currently outside the proof model.
-4. Every static import/export resolves in the old and new repository snapshots.
-5. Each resolved target is identical, or follows another proven one-to-one move.
-6. Side-effect-only imports are not present in the proof.
+For a file move to qualify for B, the tool checks that:
 
-Import/export path edits are paired structurally, then resolved twice with the
-TypeScript Compiler API: once against a virtual `HEAD` filesystem and once
-against the current working tree. A changed string alone is never enough.
+1. the TypeScript/JavaScript syntax and comments still match after accounting for import/export paths
+2. one old file matches one new file, without an ambiguous duplicate candidate
+3. the file does not use a path-sensitive construct that the current checker cannot safely handle
+4. static imports and exports resolve successfully before and after the refactor
+5. each resolved dependency is the same file, or another file whose move was also verified
+6. side-effect-only imports do not appear in the proof
 
-## Compared with adjacent tools
+Internally, the tool uses the TypeScript Compiler API to parse source files and resolve modules against both `HEAD` and the current working tree.
 
-| Tool | Primary purpose |
+## Current limits
+
+These changes are not currently certified as B and normally fall back to A:
+
+- renaming a symbol and proving that every reference still points to the same declaration
+- moving a function, class, or declaration from one file to another
+- standalone formatting or import sorting
+- arbitrary JavaScript/TypeScript changes that would require proving two programs behave identically
+
+The fallback is intentional: B stays small enough that its classifications can be explained and checked.
+
+## Compared with other tools
+
+| Tool | Main job |
 | --- | --- |
-| difftastic | Syntax-aware diff visualization |
-| `jj split` | Interactive commit splitting |
-| `git add -p` | Manual hunk-level staging |
-| git-absorb | Assign hunks to prior commits |
-| split-commit | Classify mechanical refactors versus behavioral changes using semantic evidence |
+| difftastic | Shows syntax-aware diffs |
+| `jj split` | Interactively splits changes into commits |
+| `git add -p` | Lets you manually choose diff hunks to stage |
+| git-absorb | Assigns changes to earlier commits |
+| `split-commit` | Automatically separates verified structural refactors from behavior-changing or uncertain changes |
 
-## Architecture
+## Project structure
 
 ```text
 src/
-  git/          working-tree collection and conservative move detection
-  ts/           project loading, AST normalization, module resolution
-  classifier/   file move and import/export/barrel classification
-  planner/      intermediate trees, sequential patches, artifact/stage orchestration
-  cli/          report, split, stage-a, and stage-b commands
+  git/          Git working-tree collection and move detection
+  ts/           TypeScript/JavaScript parsing and module resolution
+  classifier/   A/B classification
+  planner/      patch generation, staging, and commit planning
+  cli/          command-line interface
 ```
 
 ## Development
@@ -302,10 +295,3 @@ src/
 npm run typecheck
 npm test
 ```
-
-The test suite covers the 16 requested fixture classes, including aliases,
-relative imports, barrels, `index.ts`, cycles, mixed edits, unresolved imports,
-side-effect imports, and rename-like duplicate delete/recreate cases. It also
-creates real A/B commits, validates sequential artifacts, checks clean-index
-refusal, and proves that staging leaves the full working tree intact. Phase 3
-fixtures currently assert the conservative fallback to A.
