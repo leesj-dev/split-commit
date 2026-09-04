@@ -85,11 +85,66 @@ Deliberately deferred to later phases:
 
 ## Installation and use
 
-```bash
-npm install
-npm run build
-npm link                 # optional: exposes `semantic-split`
+Requirements: Git and Node.js 20 or newer.
 
+### Install on another computer
+
+After cloning or copying this repository onto the other computer:
+
+```bash
+npm ci
+npm run build
+npm install -g .
+
+# Confirm that the CLI is on PATH.
+semantic-split --help
+
+# Add the Git-style command for the current user on that computer.
+git config --global alias.semantic-split '!semantic-split apply'
+
+# Confirm the integration without creating commits.
+git semantic-split --dry-run
+```
+
+`npm install -g .` installs the built checkout as a normal global package. For
+development, use `npm link` instead so edits in the checkout are reflected
+without reinstalling:
+
+```bash
+npm ci
+npm run build
+npm link
+git config --global alias.semantic-split '!semantic-split apply'
+```
+
+If the repository itself cannot be cloned on the destination computer, create
+a package archive and transfer that single file:
+
+```bash
+# On the source computer
+npm ci
+npm run build
+npm pack
+
+# Copy semantic-split-0.3.0.tgz to the destination computer, then run there
+npm install -g ./semantic-split-0.3.0.tgz
+git config --global alias.semantic-split '!semantic-split apply'
+git semantic-split --dry-run
+```
+
+The alias is stored in that computer's user-level Git configuration. It works
+in every repository for that user, but must be registered once per computer.
+Inspect or remove the installation with:
+
+```bash
+git config --global --get alias.semantic-split
+git config --global --unset alias.semantic-split
+npm uninstall -g semantic-split
+```
+
+### Commands
+
+```bash
 semantic-split report
 semantic-split report --verbose
 semantic-split report --json
@@ -98,6 +153,11 @@ semantic-split split
 semantic-split stage-a
 semantic-split stage-b
 semantic-split apply
+
+# Equivalent one-command Git alias after the setup above
+git semantic-split
+git semantic-split "Custom A"
+git semantic-split "Custom A" "Custom B"
 ```
 
 Run against another repository without changing directory:
@@ -151,6 +211,11 @@ semantic-split apply "Implement cache behavior"
 
 # Custom A and B messages
 semantic-split apply \
+  "Implement cache behavior" \
+  "Move cache context into state module"
+
+# The configured Git alias has the same argument rules
+git semantic-split \
   "Implement cache behavior" \
   "Move cache context into state module"
 ```
