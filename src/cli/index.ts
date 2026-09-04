@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 import { analyzeRepository } from "../classifier/classify.js";
 import { buildSplitPlan } from "../planner/buildSplitPlan.js";
+import { applySplit, resolveCommitMessages } from "../planner/applySplit.js";
 import { stageSplitPart } from "../planner/stageSplitPart.js";
 import { writeSplitArtifacts } from "../planner/writeSplitArtifacts.js";
-import { formatDryRun, formatReport, formatWrittenPlan } from "./report.js";
+import {
+  formatApplyDryRun,
+  formatApplyResult,
+  formatDryRun,
+  formatReport,
+  formatWrittenPlan,
+} from "./report.js";
 
 interface ParsedArguments {
-  command: "report" | "split" | "stage-a" | "stage-b" | "help";
+  command: "report" | "split" | "stage-a" | "stage-b" | "apply" | "help";
   cwd: string;
   verbose: boolean;
   json: boolean;
   dryRun: boolean;
   outputDirectory?: string;
+  commitMessages: string[];
 }
 
 function usage(): string {
@@ -22,6 +30,7 @@ Usage:
   semantic-split split [--dry-run] [--output-dir <path>] [--cwd <path>]
   semantic-split stage-a [--dry-run] [--cwd <path>]
   semantic-split stage-b [--dry-run] [--cwd <path>]
+  semantic-split apply ["message A"] ["message B"] [--dry-run] [--cwd <path>]
 
 Policy:
   B  only changes with high-confidence mechanical evidence
@@ -30,12 +39,13 @@ Policy:
 Safety:
   split writes patch artifacts but never modifies the index
   stage-a/stage-b require an index that is clean relative to HEAD
+  apply commits A first, reanalyzes, then commits B
   ambiguous changes are always included in A`;
 }
 
 function parseArguments(argv: string[]): ParsedArguments {
   const commandValue = argv[0];
-  const command = ["report", "split", "stage-a", "stage-b"].includes(
+  const command = ["report", "split", "stage-a", "stage-b", "apply"].includes(
     commandValue ?? "",
   )
     ? (commandValue as ParsedArguments["command"])
@@ -45,9 +55,13 @@ function parseArguments(argv: string[]): ParsedArguments {
   let json = false;
   let dryRun = false;
   let outputDirectory: string | undefined;
+  const commitMessages: string[] = [];
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--verbose" || argument === "-v") verbose = true;
+    if (argument === "--" && command === "apply") {
+      commitMessages.push(...argv.slice(index + 1));
+      break;
+    } else if (argument === "--verbose" || argument === "-v") verbose = true;
     else if (argument === "--json") json = true;
     else if (argument === "--dry-run") dryRun = true;
     else if (argument === "--output-dir") {
@@ -68,8 +82,11 @@ function parseArguments(argv: string[]): ParsedArguments {
         verbose,
         json,
         dryRun,
+        commitMessages,
         ...(outputDirectory ? { outputDirectory } : {}),
       };
+    } else if (command === "apply") {
+      commitMessages.push(argument!);
     } else {
       throw new Error(`Unknown argument: ${argument}`);
     }
@@ -80,6 +97,7 @@ function parseArguments(argv: string[]): ParsedArguments {
     verbose,
     json,
     dryRun,
+    commitMessages,
     ...(outputDirectory ? { outputDirectory } : {}),
   };
 }
@@ -111,8 +129,20 @@ function main(): void {
 
   const plan = buildSplitPlan(args.cwd);
   if (args.dryRun) {
-    if (args.json) process.stdout.write(`${JSON.stringify(serializablePlan(plan), null, 2)}\n`);
-    else process.stdout.write(`${formatDryRun(plan, args.verbose)}\n`);
+    if (args.command === "apply") {
+      const messages = resolveCommitMessages(args.commitMessages);
+      if (args.json) {
+        process.stdout.write(
+          `${JSON.stringify({ ...serializablePlan(plan), commitMessages: messages }, null, 2)}\n`,
+        );
+      } else {
+        process.stdout.write(`${formatApplyDryRun(plan, messages, args.verbose)}\n`);
+      }
+    } else if (args.json) {
+      process.stdout.write(`${JSON.stringify(serializablePlan(plan), null, 2)}\n`);
+    } else {
+      process.stdout.write(`${formatDryRun(plan, args.verbose)}\n`);
+    }
     return;
   }
 
@@ -127,6 +157,13 @@ function main(): void {
         `${formatWrittenPlan(plan, written.outputDirectory, args.verbose)}\n`,
       );
     }
+    return;
+  }
+
+  if (args.command === "apply") {
+    const result = applySplit(plan, args.commitMessages);
+    if (args.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    else process.stdout.write(`${formatApplyResult(result)}\n`);
     return;
   }
 

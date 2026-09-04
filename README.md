@@ -69,15 +69,18 @@ Implemented:
 - SHA-256, byte count, file count, base commit, and target tree IDs in a manifest
 - atomic artifact writes under `.semantic-split/` by default
 - `stage-a` and `stage-b` commands that preserve the complete working tree
+- `apply` command that stages and commits A, reanalyzes, then stages and commits B
 - clean-index precondition: existing staged changes are rejected without modification
 - enforced order: B cannot be staged while A candidates remain
+- post-commit tree verification: if a Git hook changes A or the working tree,
+  automatic B processing stops
 - file modes, symlinks, additions, deletions, renames, and binary Git patches
 
 Deliberately deferred to later phases:
 
 - symbol rename and reference-identity proof
 - declaration/function/class moves between files
-- automatic commits and validation hooks
+- configurable typecheck/test validation hooks
 - standalone formatting/import-sort certification
 
 ## Installation and use
@@ -94,6 +97,7 @@ semantic-split split --dry-run --verbose
 semantic-split split
 semantic-split stage-a
 semantic-split stage-b
+semantic-split apply
 ```
 
 Run against another repository without changing directory:
@@ -132,6 +136,37 @@ git commit -m "mechanical structural refactor"
 
 `stage-b` must be rerun after committing A. If A candidates still exist, it
 exits without changing the index. Neither staging command commits automatically.
+
+### One-command apply
+
+`apply` performs the complete workflow: analyze → stage/commit A → reanalyze →
+stage/commit B. Commit messages are positional and assigned from A to B:
+
+```bash
+# Both default messages
+semantic-split apply
+
+# Custom A message; B keeps its default
+semantic-split apply "Implement cache behavior"
+
+# Custom A and B messages
+semantic-split apply \
+  "Implement cache behavior" \
+  "Move cache context into state module"
+```
+
+Default messages:
+
+```text
+A  Apply behavioral changes
+B  Apply mechanical structural refactor
+```
+
+An empty A or B patch is skipped without creating an empty commit. Use
+`semantic-split apply --dry-run` to see the resolved messages and planned
+commits without staging or committing anything. Existing Git hooks run normally;
+the command verifies each resulting tree and does not continue to B if commit A
+or the working tree differs from the verified plan.
 
 ### Patch artifacts
 

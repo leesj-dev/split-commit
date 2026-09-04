@@ -188,6 +188,14 @@ function currentIndexIsClean(root: string): boolean {
   throw new Error(`Could not inspect Git index: ${result.stderr.toString().trim()}`);
 }
 
+export function assertCleanIndex(root: string): void {
+  if (!currentIndexIsClean(root)) {
+    throw new Error(
+      "Git index already contains staged changes; commit or unstage them before semantic-split staging",
+    );
+  }
+}
+
 export function stageBuiltPatch(
   root: string,
   baseCommit: string,
@@ -196,11 +204,7 @@ export function stageBuiltPatch(
   if (currentHead(root) !== baseCommit) {
     throw new Error("HEAD changed after analysis; rerun semantic-split");
   }
-  if (!currentIndexIsClean(root)) {
-    throw new Error(
-      "Git index already contains staged changes; commit or unstage them before semantic-split staging",
-    );
-  }
+  assertCleanIndex(root);
   if (built.patch.length === 0) return;
 
   gitBuffer(root, ["apply", "--cached", "--check", "--binary", "-"], {
