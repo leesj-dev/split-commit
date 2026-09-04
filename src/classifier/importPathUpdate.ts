@@ -21,6 +21,7 @@ export interface ModuleUpdateAnalysis {
   mechanical: Classification[];
   ambiguous: Classification[];
   mechanicalEdits: ModuleSpecifierEdit[];
+  ambiguousEdits: AmbiguousModuleSpecifierEdit[];
   oldReplacements: Map<number, string>;
   newReplacements: Map<number, string>;
   allPairedOldReplacements: Map<number, string>;
@@ -34,6 +35,24 @@ export interface ModuleSpecifierEdit {
   newStart: number;
   newEnd: number;
   newRaw: string;
+}
+
+export interface AmbiguousModuleSpecifierEdit extends ModuleSpecifierEdit {
+  classification: Classification;
+}
+
+function moduleSpecifierEdit(
+  oldReference: StaticModuleReference,
+  newReference: StaticModuleReference,
+): ModuleSpecifierEdit {
+  return {
+    oldStart: oldReference.specifierStart,
+    oldEnd: oldReference.specifierEnd,
+    oldRaw: oldReference.rawSpecifier,
+    newStart: newReference.specifierStart,
+    newEnd: newReference.specifierEnd,
+    newRaw: newReference.rawSpecifier,
+  };
 }
 
 function pairChangedReferences(
@@ -88,6 +107,7 @@ export function analyzeModuleUpdates(
   const mechanical: Classification[] = [];
   const ambiguous: Classification[] = [];
   const mechanicalEdits: ModuleSpecifierEdit[] = [];
+  const ambiguousEdits: AmbiguousModuleSpecifierEdit[] = [];
   const oldReplacements = new Map<number, string>();
   const newReplacements = new Map<number, string>();
   const allPairedOldReplacements = new Map<number, string>();
@@ -99,24 +119,8 @@ export function analyzeModuleUpdates(
     allPairedNewReplacements.set(newReference.specifierStart, marker);
 
     const displayPath = filePath.split(path.sep).join("/");
-    if (project.configChanged) {
-      ambiguous.push({
-        side: "ambiguous",
-        kind: "unresolved-module-update",
-        path: displayPath,
-        line: newReference.line,
-        reason: "tsconfig.json changed, so Phase 1 will not certify module identity",
-        details: [
-          `${JSON.stringify(oldReference.specifier)} → ${JSON.stringify(newReference.specifier)}`,
-          "Ambiguous changes are assigned to commit A by default",
-        ],
-        confidence: "none",
-      });
-      return;
-    }
-
     if (oldReference.sideEffectOnly || newReference.sideEffectOnly) {
-      ambiguous.push({
+      const classification: Classification = {
         side: "ambiguous",
         kind: "unsafe-module-update",
         path: displayPath,
@@ -128,6 +132,11 @@ export function analyzeModuleUpdates(
           "Ambiguous changes are assigned to commit A by default",
         ],
         confidence: "none",
+      };
+      ambiguous.push(classification);
+      ambiguousEdits.push({
+        ...moduleSpecifierEdit(oldReference, newReference),
+        classification,
       });
       return;
     }
@@ -142,7 +151,7 @@ export function analyzeModuleUpdates(
       moves,
     );
     if (!resolution.equivalent) {
-      ambiguous.push({
+      const classification: Classification = {
         side: "ambiguous",
         kind: "unresolved-module-update",
         path: displayPath,
@@ -154,20 +163,18 @@ export function analyzeModuleUpdates(
           "Ambiguous changes are assigned to commit A by default",
         ],
         confidence: "none",
+      };
+      ambiguous.push(classification);
+      ambiguousEdits.push({
+        ...moduleSpecifierEdit(oldReference, newReference),
+        classification,
       });
       return;
     }
 
     oldReplacements.set(oldReference.specifierStart, marker);
     newReplacements.set(newReference.specifierStart, marker);
-    mechanicalEdits.push({
-      oldStart: oldReference.specifierStart,
-      oldEnd: oldReference.specifierEnd,
-      oldRaw: oldReference.rawSpecifier,
-      newStart: newReference.specifierStart,
-      newEnd: newReference.specifierEnd,
-      newRaw: newReference.rawSpecifier,
-    });
+    mechanicalEdits.push(moduleSpecifierEdit(oldReference, newReference));
     mechanical.push({
       side: "mechanical",
       kind: classificationKind(filePath, newReference),
@@ -186,6 +193,7 @@ export function analyzeModuleUpdates(
     mechanical,
     ambiguous,
     mechanicalEdits,
+    ambiguousEdits,
     oldReplacements,
     newReplacements,
     allPairedOldReplacements,

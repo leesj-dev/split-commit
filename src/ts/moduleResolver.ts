@@ -20,10 +20,14 @@ export function resolveModule(
   containingFile: string,
 ): string | null {
   const host = snapshot === "old" ? project.oldHost : project.newHost;
+  const compilerOptions =
+    snapshot === "old"
+      ? project.oldCompilerOptions
+      : project.newCompilerOptions;
   const result = ts.resolveModuleName(
     specifier,
     containingFile,
-    project.compilerOptions,
+    compilerOptions,
     host,
   );
   return result.resolvedModule ? canonical(result.resolvedModule.resolvedFileName) : null;

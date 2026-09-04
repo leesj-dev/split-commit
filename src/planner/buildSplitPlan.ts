@@ -8,12 +8,21 @@ import {
 } from "../classifier/importPathUpdate.js";
 import { runGit } from "../git/runGit.js";
 import {
+  reviewAmbiguous,
+  reviewedDestination,
+  selectReviewDecisions,
+  type AmbiguousReviewerOptions,
+} from "../reviewer/aiReviewer.js";
+import {
   buildSequentialPatches,
   readWorkingTreeEntry,
   type IndexOperation,
 } from "../git/temporaryIndex.js";
 import { isSourcePath } from "../ts/astNormalizer.js";
-import type { WorkingTreeChange } from "../types.js";
+import type {
+  AmbiguousReviewResult,
+  WorkingTreeChange,
+} from "../types.js";
 import type { PatchMetadata, SplitPlan } from "./types.js";
 
 interface TextReplacement {
@@ -81,9 +90,31 @@ function metadata(
   };
 }
 
-export function buildSplitPlan(cwd = process.cwd()): SplitPlan {
+export interface BuildSplitPlanOptions {
+  reviewer?: AmbiguousReviewerOptions;
+  reuseReview?: AmbiguousReviewResult;
+}
+
+export function buildSplitPlan(
+  cwd = process.cwd(),
+  options: BuildSplitPlanOptions = {},
+): SplitPlan {
   const analysis = analyzeRepositoryDetailed(cwd);
-  const { root, changes, moves, moduleAnalyses, report } = analysis;
+  const {
+    root,
+    changes,
+    moves,
+    moduleAnalyses,
+    report: deterministicReport,
+  } = analysis;
+  const aiReview = options.reuseReview
+    ? selectReviewDecisions(deterministicReport, options.reuseReview)
+    : options.reviewer
+      ? reviewAmbiguous(deterministicReport, options.reviewer)
+      : undefined;
+  const report = aiReview
+    ? { ...deterministicReport, aiReview }
+    : deterministicReport;
   const operationsA: IndexOperation[] = [];
   const finalOperations: IndexOperation[] = [];
   const consumedOldPaths = new Set(moves.map((move) => move.oldPath));
@@ -123,15 +154,37 @@ export function buildSplitPlan(cwd = process.cwd()): SplitPlan {
         moduleAnalysis.mechanical.length === 0 &&
         moduleAnalysis.ambiguous.length === 0 &&
         !hasAnyAstChange(candidatePath, change.oldContent, change.newContent);
+      const ambiguousBelongsToA = moduleAnalysis.ambiguous.some(
+        (classification) => reviewedDestination(classification, aiReview) === "A",
+      );
+      const formattingClassification = formattingOnly
+        ? report.ambiguous.find(
+            (classification) =>
+              classification.kind === "unsupported-formatting" &&
+              classification.path === candidatePath.split(path.sep).join("/"),
+          )
+        : undefined;
+      const formattingBelongsToA = formattingClassification
+        ? reviewedDestination(formattingClassification, aiReview) === "A"
+        : formattingOnly;
       const belongsToA =
-        hasRemainder || moduleAnalysis.ambiguous.length > 0 || formattingOnly;
+        hasRemainder || ambiguousBelongsToA || formattingBelongsToA;
 
       if (belongsToA) {
+        const reviewedMechanicalEdits = moduleAnalysis.ambiguousEdits
+          .filter(
+            ({ classification }) =>
+              reviewedDestination(classification, aiReview) === "B",
+          )
+          .map(({ classification: _classification, ...edit }) => edit);
         operationsA.push({
           kind: "set",
           path: candidatePath,
           mode: change.newMode ?? change.oldMode ?? "100644",
-          content: aContent(change.newContent, moduleAnalysis.mechanicalEdits),
+          content: aContent(change.newContent, [
+            ...moduleAnalysis.mechanicalEdits,
+            ...reviewedMechanicalEdits,
+          ]),
         });
       }
       continue;

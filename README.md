@@ -28,6 +28,34 @@ Requires Node.js 20+.
 npm install -g split-commit
 ```
 
+### Codex Desktop
+
+Install the repository skill with Codex's built-in skill installer:
+
+```text
+$skill-installer install the split-commit skill from
+https://github.com/leesj-dev/split-commit/tree/main/.agents/skills/split-commit
+```
+
+Then open the repository you want to inspect, choose the model and reasoning
+effort in the task UI, and invoke `$split-commit`. The skill runs the installed
+`split-commit` executable underneath, but the user does not need to construct
+review flags or run a second coding-agent session.
+
+### Claude Code
+
+The Claude Code project skill lives at `.claude/skills/split-commit`. Copy that
+directory to `~/.claude/skills/split-commit` to make it available in every
+repository, or check it into a target repository for project-only use. Select
+the session model and effort normally, then invoke:
+
+```text
+/split-commit preview my working-tree split
+```
+
+Claude reviews ambiguous entries in the current session and does not launch a
+nested Claude Code CLI process.
+
 ## Quick start
 
 Run inside a repository with at least one commit. `split-commit` compares the current working tree with `HEAD`.
@@ -36,6 +64,10 @@ Run inside a repository with at least one commit. `split-commit` compares the cu
 # See how changes are classified.
 split-commit report            # summary
 split-commit report --verbose  # with evidence
+
+# Let a local coding agent make the final A/B decision for ambiguous changes.
+split-commit report --verbose --review codex --model gpt-5.6-terra --effort high
+split-commit report --verbose --review claude --model sonnet --effort high
 
 # Preview the A → B plan without committing.
 split-commit apply --dry-run
@@ -62,23 +94,127 @@ If A or B is empty, that commit is skipped. Default messages are `Apply behavior
 | `stage-b`          | Stage only B, after A has been committed        |
 | `apply`            | Create A and B commits in order                 |
 
+Add `--review codex` or `--review claude` to any command
+to have that local coding agent review every ambiguous classification. The
+agent's A/B decisions are authoritative and directly change the generated,
+staged, or committed patches. Without this flag, ambiguous changes continue to
+default to A.
+
 All commands accept `--cwd <path>` to target another repository.  
 `--dry-run` works with `split`, `stage-a`, `stage-b`, and `apply`.
 
-## What goes into A and B
+## What goes into A, B, and Ambiguous
 
-**A** is the safe default. It contains any change the tool cannot confidently prove to be purely structural: logic changes, control flow, API shape, new or deleted files without a proven move partner, non-JS/TS files, and anything the classifier does not understand well enough.
+`split-commit report` prints three sections. The `kind` values below are the
+exact values shown by `report --verbose` and `report --json`.
 
-**B** is narrow by design. Currently it covers:
+### Mechanical changes (B)
 
-- moving or renaming a JS/TS file without changing its code or comments
-- updating `import`/`export` paths to follow a verified file move (including barrel files like `index.ts`)
+**B** is narrow by design: it contains only high-confidence structural edits.
 
-A changed path string alone is not enough. The tool resolves both old and new imports and confirms they point to the same module, or to a file whose move was independently verified.
+| Report `kind` | Included change |
+| --- | --- |
+| `file-move` | A JS/TS file was moved or renamed with its code and comments otherwise unchanged. |
+| `import-path-update` | An `import` specifier was updated to follow a verified move. |
+| `export-path-update` | An `export ... from` specifier was updated to follow a verified move. |
+| `barrel-update` | An export path was updated in a barrel file such as `index.ts`. |
+
+A changed path string alone is not enough. The tool resolves both old and new
+specifiers and confirms they point to the same module, or to a file whose move
+was independently verified.
+
+### Behavioral changes (A)
+
+**A** is the safe default. These entries are directly included in A:
+
+| Report `kind` | Included change |
+| --- | --- |
+| `source-modification` | A JS/TS edit changes normalized AST or comments beyond recognized module-path updates, or a move candidate fails structural validation. |
+| `source-addition` | New JS/TS source with no proven predecessor. |
+| `source-deletion` | Deleted JS/TS source with no proven successor. |
+| `non-source-change` | Any non-JS/TS change, which the structural classifier does not certify. |
+
+### Ambiguous (defaults to A)
+
+These entries are kept separate in the report because the deterministic
+classifier cannot safely make the A/B decision. Without `--review`, all of
+them are included in A; an AI reviewer may explicitly assign each one to A or
+B.
+
+| Report `kind` | Why it is ambiguous |
+| --- | --- |
+| `unresolved-module-update` | Old and new module specifiers do not resolve to a proven-identical target. |
+| `unsafe-module-update` | A side-effect-only import changed, so module initialization order may be observable. |
+| `unsupported-formatting` | AST and comments are unchanged, but standalone formatting is not yet certified as mechanical. |
 
 A single file can contain both kinds of changes. For example, if `App.ts` changes an import path and also changes component logic, the logic goes to A and the verified import edit goes to B.
 
 > Putting a real behavior change in B would make the split misleading. Putting a harmless refactor in A is less convenient, but does not weaken the safety of B.
+
+### AI review of ambiguous changes
+
+The deterministic classifier always runs first. It resolves the old tree with
+the `HEAD` TypeScript configuration and the new tree with the working-tree
+configuration, so a `tsconfig.json` alias migration can be certified without
+AI when both snapshots prove the same module identity.
+
+Only the remaining ambiguous entries are sent to the selected reviewer:
+
+```bash
+split-commit split --review codex
+split-commit apply --review claude
+
+# Optional provider-specific model and reasoning overrides
+split-commit report --review codex --model <model> --effort <level>
+```
+
+Codex runs through `codex exec` with an ephemeral, read-only sandbox and a JSON
+output schema. Claude Code runs in non-interactive restricted mode with a JSON
+schema and no persistent session. The reviewer must return exactly one valid
+A/B decision for every ambiguous entry; a missing, duplicate, or invalid
+decision stops the command instead of silently falling back.
+
+#### Codex Desktop and Claude Code skills
+
+The repository includes a `split-commit` skill under `.agents/skills`. In Codex
+Desktop, select the model and reasoning effort in the task UI, then invoke
+`$split-commit` and ask it to inspect or split the working tree. The current
+task reviews the ambiguous entries itself; it does not launch a second Codex
+CLI process. The skill passes its structured decisions back through
+`--review file --file <path>` and verifies the resulting A/B plan.
+
+Claude Code uses the matching project skill under `.claude/skills`. Invoke it
+as `/split-commit`; it uses the current Claude session's model and effort and
+the same structured decision-file handoff.
+
+The default skill action is a dry-run preview. It writes patches, stages files,
+or creates commits only when the prompt requests that operation.
+
+Other agents can integrate through the command adapter protocol:
+
+```bash
+split-commit report \
+  --review command \
+  --command /absolute/path/to/reviewer-adapter
+```
+
+The executable receives one JSON request on standard input and must return:
+
+```json
+{
+  "decisions": [
+    {
+      "classificationId": "id from request.candidates",
+      "destination": "A",
+      "confidence": "high",
+      "reason": "Why this belongs in A"
+    }
+  ]
+}
+```
+
+The request also includes the repository path, base commit, relevant diff,
+candidate evidence, and the exact output JSON Schema.
 
 ---
 

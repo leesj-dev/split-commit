@@ -30,11 +30,23 @@ export function writeSplitArtifacts(
   const reportPath = path.join(outputDirectory, "report.json");
   const manifestPath = path.join(outputDirectory, "manifest.json");
   const manifest: SplitManifest = {
-    version: 1,
+    version: 2,
     generatedAt: new Date().toISOString(),
     repository: plan.root,
     baseCommit: plan.baseCommit,
-    policy: { ambiguousDestination: "A", order: ["A", "B"] },
+    policy: plan.report.aiReview
+      ? {
+          ambiguousDestination: "AI_REVIEW",
+          reviewer: plan.report.aiReview.provider,
+          ...(plan.report.aiReview.model
+            ? { model: plan.report.aiReview.model }
+            : {}),
+          ...(plan.report.aiReview.effort
+            ? { effort: plan.report.aiReview.effort }
+            : {}),
+          order: ["A", "B"],
+        }
+      : { ambiguousDestination: "A", order: ["A", "B"] },
     patches: {
       a: { ...plan.a.metadata, file: "commit-a.patch" },
       b: { ...plan.b.metadata, file: "commit-b.patch" },

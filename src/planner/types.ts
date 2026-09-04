@@ -18,12 +18,15 @@ export interface SplitPlan {
 }
 
 export interface SplitManifest {
-  version: 1;
+  version: 2;
   generatedAt: string;
   repository: string;
   baseCommit: string;
   policy: {
-    ambiguousDestination: "A";
+    ambiguousDestination: "A" | "AI_REVIEW";
+    reviewer?: string;
+    model?: string;
+    effort?: string;
     order: ["A", "B"];
   };
   patches: {

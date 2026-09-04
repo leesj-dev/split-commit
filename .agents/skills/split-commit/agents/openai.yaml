@@ -1,0 +1,4 @@
+interface:
+  display_name: "Split Commit"
+  short_description: "Review and split mixed Git changes safely"
+  default_prompt: "Use $split-commit to review my working tree and show the A/B split plan."

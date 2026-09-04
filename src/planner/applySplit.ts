@@ -76,7 +76,11 @@ export function applySplit(
       );
     }
     resultA = { committed: true, message: messages.a, commitId };
-    planForB = buildSplitPlan(root);
+    planForB = buildSplitPlan(root, {
+      ...(initialPlan.report.aiReview
+        ? { reuseReview: initialPlan.report.aiReview }
+        : {}),
+    });
     if (planForB.b.treeId !== initialFinalTree) {
       throw new Error(
         "Working tree changed after commit A; B was not attempted. Review the A commit and current working tree",

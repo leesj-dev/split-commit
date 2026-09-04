@@ -1,3 +1,4 @@
+import { ambiguousClassificationId } from "../reviewer/aiReviewer.js";
 import type { AnalysisReport, Classification } from "../types.js";
 import type { SplitPlan } from "../planner/types.js";
 import type {
@@ -18,18 +19,58 @@ function counts(items: Classification[]): string[] {
     .map(([kind, count]) => `  ${String(count).padStart(4)}  ${kind}`);
 }
 
-function section(title: string, items: Classification[], verbose: boolean): string[] {
+function section(
+  title: string,
+  items: Classification[],
+  verbose: boolean,
+  report?: AnalysisReport,
+): string[] {
   const output = [`${title}: ${items.length}`];
   if (!verbose) return [...output, ...counts(items)];
   for (const item of items) {
-    output.push(`  ${label(item)}`);
+    const decision = report?.aiReview?.decisions.find(
+      (candidate) =>
+        candidate.classificationId === ambiguousClassificationId(item),
+    );
+    output.push(
+      `  ${label(item)}${decision ? ` -> ${decision.destination} by AI (${decision.confidence})` : ""}`,
+    );
     output.push(`    Reason: ${item.reason}`);
     for (const detail of item.details ?? []) output.push(`    - ${detail}`);
+    if (decision) output.push(`    - AI: ${decision.reason}`);
   }
   return output;
 }
 
+function destinations(report: AnalysisReport): { a: number; b: number } {
+  if (!report.aiReview) return { a: report.ambiguous.length, b: 0 };
+  let a = 0;
+  let b = 0;
+  for (const classification of report.ambiguous) {
+    const destination = report.aiReview.decisions.find(
+      (decision) =>
+        decision.classificationId ===
+        ambiguousClassificationId(classification),
+    )?.destination;
+    if (destination === "B") b += 1;
+    else a += 1;
+  }
+  return { a, b };
+}
+
 export function formatReport(report: AnalysisReport, verbose = false): string {
+  const reviewer = report.aiReview
+    ? [
+        report.aiReview.provider,
+        report.aiReview.model ? `model ${report.aiReview.model}` : undefined,
+        report.aiReview.effort ? `effort ${report.aiReview.effort}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : undefined;
+  const ambiguousTitle = report.aiReview
+    ? `Ambiguous (AI-reviewed by ${reviewer})`
+    : "Ambiguous (defaults to A)";
   return [
     `Repository: ${report.root}`,
     "",
@@ -37,7 +78,7 @@ export function formatReport(report: AnalysisReport, verbose = false): string {
     "",
     ...section("Behavioral changes (A)", report.behavioral, verbose),
     "",
-    ...section("Ambiguous (defaults to A)", report.ambiguous, verbose),
+    ...section(ambiguousTitle, report.ambiguous, verbose, report),
   ].join("\n");
 }
 
@@ -46,13 +87,14 @@ function formatPatch(label: string, metadata: SplitPlan["a"]["metadata"]): strin
 }
 
 export function formatDryRun(plan: SplitPlan, verbose = false): string {
+  const ambiguous = destinations(plan.report);
   return [
     formatReport(plan.report, verbose),
     "",
     "Dry-run split plan:",
     `  base commit: ${plan.baseCommit}`,
-    `  commit A candidates: ${plan.report.behavioral.length + plan.report.ambiguous.length}`,
-    `  commit B candidates: ${plan.report.mechanical.length}`,
+    `  commit A candidates: ${plan.report.behavioral.length + ambiguous.a}`,
+    `  commit B candidates: ${plan.report.mechanical.length + ambiguous.b}`,
     formatPatch("commit-a.patch", plan.a.metadata),
     formatPatch("commit-b.patch", plan.b.metadata),
     "  Git index modified: no",

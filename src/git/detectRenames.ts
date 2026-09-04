@@ -250,10 +250,7 @@ export function detectRenames(
 
     const oldReferences = extractStaticModuleReferences(move.oldPath, move.oldContent);
     const newReferences = extractStaticModuleReferences(move.newPath, move.newContent);
-    let failure =
-      project.configChanged && oldReferences.length > 0
-        ? "Project configuration changed, so old module resolution cannot be certified"
-        : null;
+    let failure: string | null = null;
     if (oldReferences.length !== newReferences.length) {
       failure = "Static module reference count changed";
     } else if (!failure) {

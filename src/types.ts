@@ -37,11 +37,30 @@ export interface Classification {
   confidence?: "high" | "none";
 }
 
+export type ReviewDestination = "A" | "B";
+export type ReviewConfidence = "high" | "medium" | "low";
+
+export interface AmbiguousReviewDecision {
+  classificationId: string;
+  destination: ReviewDestination;
+  confidence: ReviewConfidence;
+  reason: string;
+}
+
+export interface AmbiguousReviewResult {
+  provider: string;
+  model?: string;
+  effort?: string;
+  reviewedAt: string;
+  decisions: AmbiguousReviewDecision[];
+}
+
 export interface AnalysisReport {
   root: string;
   mechanical: Classification[];
   behavioral: Classification[];
   ambiguous: Classification[];
+  aiReview?: AmbiguousReviewResult;
 }
 
 export interface ConfirmedMove {

@@ -6,10 +6,10 @@ import type { WorkingTreeChange } from "../types.js";
 export interface ProjectContext {
   root: string;
   configPath: string | null;
-  compilerOptions: ts.CompilerOptions;
+  oldCompilerOptions: ts.CompilerOptions;
+  newCompilerOptions: ts.CompilerOptions;
   oldHost: ts.ModuleResolutionHost;
   newHost: ts.ModuleResolutionHost;
-  configChanged: boolean;
 }
 
 function absolute(root: string, filePath: string): string {
@@ -19,7 +19,7 @@ function absolute(root: string, filePath: string): string {
 function makeOldHost(
   root: string,
   changes: WorkingTreeChange[],
-): ts.ModuleResolutionHost {
+): ts.ModuleResolutionHost & ts.ParseConfigHost {
   const oldFiles = new Map<string, string>();
   const hiddenFromOldTree = new Set<string>();
 
@@ -57,33 +57,53 @@ function makeOldHost(
       return ts.sys.directoryExists?.(resolved) ?? existsSync(resolved);
     },
     getCurrentDirectory: () => root,
+    readDirectory(rootDirectory, extensions, excludes, includes, depth) {
+      const current = ts.sys.readDirectory(
+        rootDirectory,
+        extensions,
+        excludes,
+        includes,
+        depth,
+      );
+      const visible = new Set(
+        current
+          .map((fileName) => normalize(fileName))
+          .filter((fileName) => !hiddenFromOldTree.has(fileName)),
+      );
+      for (const fileName of oldFiles.keys()) {
+        if (fileName.startsWith(`${normalize(rootDirectory)}${path.sep}`)) {
+          visible.add(fileName);
+        }
+      }
+      return [...visible];
+    },
+    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
     ...(ts.sys.realpath ? { realpath: ts.sys.realpath } : {}),
     getDirectories: ts.sys.getDirectories,
   };
 }
 
-function loadCompilerOptions(root: string): {
-  configPath: string | null;
-  compilerOptions: ts.CompilerOptions;
-} {
-  const configPath = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
-  if (!configPath) {
-    return {
-      configPath: null,
-      compilerOptions: {
-        allowJs: true,
-        jsx: ts.JsxEmit.Preserve,
-        module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler,
-      },
-    };
-  }
+const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
+  allowJs: true,
+  jsx: ts.JsxEmit.Preserve,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+};
 
-  const loaded = ts.readConfigFile(configPath, ts.sys.readFile);
+function parseCompilerOptions(
+  configPath: string | null,
+  host: ts.ParseConfigHost,
+): ts.CompilerOptions {
+  if (!configPath || !host.fileExists(configPath)) return DEFAULT_COMPILER_OPTIONS;
+  const loaded = ts.readConfigFile(configPath, host.readFile);
   if (loaded.error) {
     throw new Error(ts.flattenDiagnosticMessageText(loaded.error.messageText, "\n"));
   }
-  const parsed = ts.parseJsonConfigFileContent(loaded.config, ts.sys, path.dirname(configPath));
+  const parsed = ts.parseJsonConfigFileContent(
+    loaded.config,
+    host,
+    path.dirname(configPath),
+  );
   const errors = parsed.errors.filter(
     (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
   );
@@ -94,34 +114,57 @@ function loadCompilerOptions(root: string): {
         .join("\n"),
     );
   }
-  return { configPath, compilerOptions: parsed.options };
+  return parsed.options;
+}
+
+function findConfigPath(
+  root: string,
+  changes: WorkingTreeChange[],
+  oldHost: ts.ModuleResolutionHost,
+): string | null {
+  const current = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
+  if (current) return current;
+  const previous = ts.findConfigFile(root, oldHost.fileExists, "tsconfig.json");
+  if (previous) return previous;
+  const changedConfig = changes.find(
+    (change) =>
+      (change.oldPath ?? change.newPath)?.split(path.sep).join("/") ===
+      "tsconfig.json",
+  );
+  return changedConfig ? path.join(root, "tsconfig.json") : null;
+}
+
+function loadCompilerOptions(
+  root: string,
+  changes: WorkingTreeChange[],
+  oldHost: ts.ModuleResolutionHost & ts.ParseConfigHost,
+): {
+  configPath: string | null;
+  oldCompilerOptions: ts.CompilerOptions;
+  newCompilerOptions: ts.CompilerOptions;
+} {
+  const configPath = findConfigPath(root, changes, oldHost);
+  return {
+    configPath,
+    oldCompilerOptions: parseCompilerOptions(configPath, oldHost),
+    newCompilerOptions: parseCompilerOptions(configPath, ts.sys),
+  };
 }
 
 export function loadProject(
   root: string,
   changes: WorkingTreeChange[],
 ): ProjectContext {
-  const { configPath, compilerOptions } = loadCompilerOptions(root);
-  const configRelativePath = configPath
-    ? path.relative(root, configPath).split(path.sep).join("/")
-    : null;
-  const configChanged = changes.some((change) => {
-    const changedPaths = [change.oldPath, change.newPath].filter(
-      (filePath): filePath is string => Boolean(filePath),
-    );
-    return changedPaths.some(
-      (filePath) =>
-        filePath === configRelativePath ||
-        /(?:^|\/)(?:ts|js)config(?:\.[^/]+)?\.json$/i.test(filePath),
-    );
-  });
+  const oldHost = makeOldHost(root, changes);
+  const { configPath, oldCompilerOptions, newCompilerOptions } =
+    loadCompilerOptions(root, changes, oldHost);
 
   return {
     root,
     configPath,
-    compilerOptions,
-    oldHost: makeOldHost(root, changes),
+    oldCompilerOptions,
+    newCompilerOptions,
+    oldHost,
     newHost: ts.sys,
-    configChanged,
   };
 }
