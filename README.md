@@ -21,7 +21,7 @@ commit B  move cache.ts and update its import paths
 Requires Node.js 20+.
 
 ```bash
-npm install -g split-commit
+npm install -g @leesj-dev/split-commit
 ```
 
 ## Quick start
@@ -113,7 +113,7 @@ git split-commit "Custom A message" "Custom B message"
 
 # Remove:
 git config --global --unset alias.split-commit
-npm uninstall -g split-commit
+npm uninstall -g @leesj-dev/split-commit
 ```
 
 ### Patch files
