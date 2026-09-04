@@ -1,6 +1,6 @@
 {
   "name": "split-commit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Conservatively classify working-tree changes as behavioral or provably mechanical refactors.",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -21,6 +21,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/postbuild.mjs",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {

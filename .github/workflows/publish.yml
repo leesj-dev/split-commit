@@ -28,6 +28,11 @@ jobs:
         # separate registry endpoint; tests below remain the release gate.
         run: npm ci --no-audit
 
+      - name: Validate publishable package
+        run: |
+          npm run typecheck
+          npm pack --dry-run
+
       - name: Use Node.js for Trusted Publishing
         uses: actions/setup-node@v6
         with:
