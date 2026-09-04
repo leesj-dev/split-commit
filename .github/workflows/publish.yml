@@ -24,7 +24,9 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # The dependency audit is not part of publishing and can stall on its
+        # separate registry endpoint; tests below remain the release gate.
+        run: npm ci --no-audit
 
       - name: Test
         run: npm test
