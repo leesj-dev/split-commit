@@ -40,11 +40,11 @@ function move(root: string, oldPath: string, newPath: string): void {
 }
 
 function repository(files: Record<string, string>): string {
-  const root = mkdtempSync(path.join(tmpdir(), "semantic-split-phase2-"));
+  const root = mkdtempSync(path.join(tmpdir(), "split-commit-phase2-"));
   repositories.push(root);
   git(root, "init", "-b", "main");
   git(root, "config", "user.email", "test@example.com");
-  git(root, "config", "user.name", "semantic-split test");
+  git(root, "config", "user.name", "split-commit test");
   write(
     root,
     "tsconfig.json",
@@ -142,7 +142,7 @@ test("split CLI writes hashed artifacts and leaves the index untouched", () => {
     encoding: "utf8",
   });
   const afterIndex = git(root, "diff", "--cached", "--name-only");
-  const artifactDirectory = path.join(root, ".semantic-split");
+  const artifactDirectory = path.join(root, ".split-commit");
   const patchA = readFileSync(path.join(artifactDirectory, "commit-a.patch"));
   const manifest = JSON.parse(
     readFileSync(path.join(artifactDirectory, "manifest.json"), "utf8"),

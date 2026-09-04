@@ -37,11 +37,11 @@ function write(root: string, filePath: string, content: string): void {
 }
 
 function mixedRepository(): string {
-  const root = mkdtempSync(path.join(tmpdir(), "semantic-split-apply-"));
+  const root = mkdtempSync(path.join(tmpdir(), "split-commit-apply-"));
   repositories.push(root);
   git(root, "init", "-b", "main");
   git(root, "config", "user.email", "test@example.com");
-  git(root, "config", "user.name", "semantic-split test");
+  git(root, "config", "user.name", "split-commit test");
   write(
     root,
     "tsconfig.json",

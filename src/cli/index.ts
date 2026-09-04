@@ -23,14 +23,14 @@ interface ParsedArguments {
 }
 
 function usage(): string {
-  return `semantic-split — conservative semantic Git change classifier
+  return `split-commit — conservative semantic Git change classifier
 
 Usage:
-  semantic-split report [--verbose] [--json] [--cwd <path>]
-  semantic-split split [--dry-run] [--output-dir <path>] [--cwd <path>]
-  semantic-split stage-a [--dry-run] [--cwd <path>]
-  semantic-split stage-b [--dry-run] [--cwd <path>]
-  semantic-split apply ["message A"] ["message B"] [--dry-run] [--cwd <path>]
+  split-commit report [--verbose] [--json] [--cwd <path>]
+  split-commit split [--dry-run] [--output-dir <path>] [--cwd <path>]
+  split-commit stage-a [--dry-run] [--cwd <path>]
+  split-commit stage-b [--dry-run] [--cwd <path>]
+  split-commit apply ["message A"] ["message B"] [--dry-run] [--cwd <path>]
 
 Policy:
   B  only changes with high-confidence mechanical evidence
@@ -184,6 +184,6 @@ function main(): void {
 try {
   main();
 } catch (error) {
-  process.stderr.write(`semantic-split: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`split-commit: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 }

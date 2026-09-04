@@ -77,7 +77,7 @@ export function collectChanges(cwd = process.cwd()): CollectedChanges {
   const root = path.resolve(rootOutput.trim());
 
   if (!tryGit(root, ["rev-parse", "--verify", "HEAD"])) {
-    throw new Error("semantic-split needs an initial commit to compare against");
+    throw new Error("split-commit needs an initial commit to compare against");
   }
 
   const diff = runGit(root, [
@@ -95,7 +95,7 @@ export function collectChanges(cwd = process.cwd()): CollectedChanges {
     "ls-files",
     "--others",
     "--exclude-standard",
-    "--exclude=.semantic-split/**",
+    "--exclude=.split-commit/**",
     "-z",
   ]);
   const untracked = untrackedOutput.split("\0").filter(Boolean);

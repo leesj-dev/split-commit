@@ -1,6 +1,6 @@
-# semantic-split
+# split-commit
 
-`semantic-split` makes large refactors easier to investigate by classifying a
+`split-commit` makes large refactors easier to investigate by classifying a
 Git working tree according to semantic intent:
 
 - **A — behavioral / logic changes:** anything that may affect runtime behavior,
@@ -67,7 +67,7 @@ Implemented:
 - temporary object databases, so report/dry-run/artifact planning does not add
   unreachable objects to the analyzed repository
 - SHA-256, byte count, file count, base commit, and target tree IDs in a manifest
-- atomic artifact writes under `.semantic-split/` by default
+- atomic artifact writes under `.split-commit/` by default
 - `stage-a` and `stage-b` commands that preserve the complete working tree
 - `apply` command that stages and commits A, reanalyzes, then stages and commits B
 - clean-index precondition: existing staged changes are rejected without modification
@@ -97,13 +97,13 @@ npm run build
 npm install -g .
 
 # Confirm that the CLI is on PATH.
-semantic-split --help
+split-commit --help
 
 # Add the Git-style command for the current user on that computer.
-git config --global alias.semantic-split '!semantic-split apply'
+git config --global alias.split-commit '!split-commit apply'
 
 # Confirm the integration without creating commits.
-git semantic-split --dry-run
+git split-commit --dry-run
 ```
 
 `npm install -g .` installs the built checkout as a normal global package. For
@@ -114,7 +114,7 @@ without reinstalling:
 npm ci
 npm run build
 npm link
-git config --global alias.semantic-split '!semantic-split apply'
+git config --global alias.split-commit '!split-commit apply'
 ```
 
 If the repository itself cannot be cloned on the destination computer, create
@@ -126,10 +126,10 @@ npm ci
 npm run build
 npm pack
 
-# Copy semantic-split-0.3.0.tgz to the destination computer, then run there
-npm install -g ./semantic-split-0.3.0.tgz
-git config --global alias.semantic-split '!semantic-split apply'
-git semantic-split --dry-run
+# Copy split-commit-0.3.0.tgz to the destination computer, then run there
+npm install -g ./split-commit-0.3.0.tgz
+git config --global alias.split-commit '!split-commit apply'
+git split-commit --dry-run
 ```
 
 The alias is stored in that computer's user-level Git configuration. It works
@@ -137,33 +137,33 @@ in every repository for that user, but must be registered once per computer.
 Inspect or remove the installation with:
 
 ```bash
-git config --global --get alias.semantic-split
-git config --global --unset alias.semantic-split
-npm uninstall -g semantic-split
+git config --global --get alias.split-commit
+git config --global --unset alias.split-commit
+npm uninstall -g split-commit
 ```
 
 ### Commands
 
 ```bash
-semantic-split report
-semantic-split report --verbose
-semantic-split report --json
-semantic-split split --dry-run --verbose
-semantic-split split
-semantic-split stage-a
-semantic-split stage-b
-semantic-split apply
+split-commit report
+split-commit report --verbose
+split-commit report --json
+split-commit split --dry-run --verbose
+split-commit split
+split-commit stage-a
+split-commit stage-b
+split-commit apply
 
 # Equivalent one-command Git alias after the setup above
-git semantic-split
-git semantic-split "Custom A"
-git semantic-split "Custom A" "Custom B"
+git split-commit
+git split-commit "Custom A"
+git split-commit "Custom A" "Custom B"
 ```
 
 Run against another repository without changing directory:
 
 ```bash
-semantic-split report --cwd /path/to/repository
+split-commit report --cwd /path/to/repository
 ```
 
 The repository needs an initial commit because analysis compares `HEAD` with
@@ -177,19 +177,19 @@ so they cannot overwrite the user's staged state.
 
 ```bash
 # 1. Inspect classifications and generated patch metadata. No writes.
-semantic-split split --dry-run --verbose
+split-commit split --dry-run --verbose
 
 # 2. Optionally write sequential patches, report.json, and manifest.json.
 #    This does not touch the index.
-semantic-split split
+split-commit split
 
 # 3. Stage only behavioral and ambiguous changes.
-semantic-split stage-a
+split-commit stage-a
 git diff --cached
 git commit -m "behavioral changes"
 
 # 4. Reanalyze against the new HEAD, then stage the mechanical remainder.
-semantic-split stage-b
+split-commit stage-b
 git diff --cached
 git commit -m "mechanical structural refactor"
 ```
@@ -204,18 +204,18 @@ stage/commit B. Commit messages are positional and assigned from A to B:
 
 ```bash
 # Both default messages
-semantic-split apply
+split-commit apply
 
 # Custom A message; B keeps its default
-semantic-split apply "Implement cache behavior"
+split-commit apply "Implement cache behavior"
 
 # Custom A and B messages
-semantic-split apply \
+split-commit apply \
   "Implement cache behavior" \
   "Move cache context into state module"
 
 # The configured Git alias has the same argument rules
-git semantic-split \
+git split-commit \
   "Implement cache behavior" \
   "Move cache context into state module"
 ```
@@ -228,7 +228,7 @@ B  Apply mechanical structural refactor
 ```
 
 An empty A or B patch is skipped without creating an empty commit. Use
-`semantic-split apply --dry-run` to see the resolved messages and planned
+`split-commit apply --dry-run` to see the resolved messages and planned
 commits without staging or committing anything. Existing Git hooks run normally;
 the command verifies each resulting tree and does not continue to B if commit A
 or the working tree differs from the verified plan.
@@ -238,7 +238,7 @@ or the working tree differs from the verified plan.
 By default `split` writes:
 
 ```text
-.semantic-split/
+.split-commit/
   commit-a.patch
   commit-b.patch
   manifest.json
@@ -283,7 +283,7 @@ against the current working tree. A changed string alone is never enough.
 | `jj split` | Interactive commit splitting |
 | `git add -p` | Manual hunk-level staging |
 | git-absorb | Assign hunks to prior commits |
-| semantic-split | Classify mechanical refactors versus behavioral changes using semantic evidence |
+| split-commit | Classify mechanical refactors versus behavioral changes using semantic evidence |
 
 ## Architecture
 

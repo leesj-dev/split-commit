@@ -53,11 +53,11 @@ function repository(
     include: ["src"],
   },
 ): string {
-  const root = mkdtempSync(path.join(tmpdir(), "semantic-split-test-"));
+  const root = mkdtempSync(path.join(tmpdir(), "split-commit-test-"));
   repositories.push(root);
   git(root, "init", "-b", "main");
   git(root, "config", "user.email", "test@example.com");
-  git(root, "config", "user.name", "semantic-split test");
+  git(root, "config", "user.name", "split-commit test");
   write(root, "tsconfig.json", `${JSON.stringify(tsconfig, null, 2)}\n`);
   for (const [filePath, content] of Object.entries(files)) write(root, filePath, content);
   git(root, "add", ".");

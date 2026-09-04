@@ -22,7 +22,7 @@ export function writeSplitArtifacts(
 ): WrittenArtifacts {
   const outputDirectory = requestedOutputDirectory
     ? path.resolve(plan.root, requestedOutputDirectory)
-    : path.join(plan.root, ".semantic-split");
+    : path.join(plan.root, ".split-commit");
   mkdirSync(outputDirectory, { recursive: true });
 
   const patchAPath = path.join(outputDirectory, "commit-a.patch");

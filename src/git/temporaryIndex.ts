@@ -157,7 +157,7 @@ export function buildSequentialPatches(
   operationsA: IndexOperation[],
   finalOperations: IndexOperation[],
 ): { a: BuiltPatch; b: BuiltPatch } {
-  const temporaryDirectory = mkdtempSync(path.join(tmpdir(), "semantic-split-index-"));
+  const temporaryDirectory = mkdtempSync(path.join(tmpdir(), "split-commit-index-"));
   const env = temporaryIndexEnvironment(root, temporaryDirectory);
   try {
     const baseTreeId = gitBuffer(root, ["rev-parse", "HEAD^{tree}"], { env })
@@ -191,7 +191,7 @@ function currentIndexIsClean(root: string): boolean {
 export function assertCleanIndex(root: string): void {
   if (!currentIndexIsClean(root)) {
     throw new Error(
-      "Git index already contains staged changes; commit or unstage them before semantic-split staging",
+      "Git index already contains staged changes; commit or unstage them before split-commit staging",
     );
   }
 }
@@ -202,7 +202,7 @@ export function stageBuiltPatch(
   built: BuiltPatch,
 ): void {
   if (currentHead(root) !== baseCommit) {
-    throw new Error("HEAD changed after analysis; rerun semantic-split");
+    throw new Error("HEAD changed after analysis; rerun split-commit");
   }
   assertCleanIndex(root);
   if (built.patch.length === 0) return;
