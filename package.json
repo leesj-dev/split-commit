@@ -1,6 +1,6 @@
 {
   "name": "split-commit",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Conservatively classify working-tree changes as behavioral or provably mechanical refactors.",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -12,7 +12,7 @@
     }
   },
   "bin": {
-    "split-commit": "./dist/src/cli/index.js"
+    "split-commit": "dist/src/cli/index.js"
   },
   "files": [
     "dist/src",
