@@ -1,5 +1,9 @@
 # split-commit
 
+[![Npm package version](https://badgen.net/npm/v/split-commit)](https://npmjs.com/package/split-commit)
+[![Publish npm package](https://github.com/leesj-dev/split-commit/actions/workflows/publish.yml/badge.svg)](https://github.com/leesj-dev/split-commit/actions/workflows/publish.yml)
+[![GitHub license](https://badgen.net/github/license/leesj-dev/split-commit)](https://github.com/leesj-dev/split-commit?tab=MIT-1-ov-file)
+
 `split-commit` separates a mixed JavaScript/TypeScript refactor into two commits:
 
 - **A**: code changes that may change behavior, plus anything uncertain
