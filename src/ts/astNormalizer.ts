@@ -133,6 +133,8 @@ export interface StaticModuleReference {
   kind: "import" | "export";
   specifier: string;
   specifierStart: number;
+  specifierEnd: number;
+  rawSpecifier: string;
   line: number;
   sideEffectOnly: boolean;
   structuralKey: string;
@@ -180,6 +182,8 @@ export function extractStaticModuleReferences(
         kind: "import",
         specifier: statement.moduleSpecifier.text,
         specifierStart: start,
+        specifierEnd: statement.moduleSpecifier.getEnd(),
+        rawSpecifier: statement.moduleSpecifier.getText(sourceFile),
         line: sourceFile.getLineAndCharacterOfPosition(start).line + 1,
         sideEffectOnly: !statement.importClause,
         structuralKey: subtreeFingerprint(sourceFile, statement, start),
@@ -194,6 +198,8 @@ export function extractStaticModuleReferences(
         kind: "export",
         specifier: statement.moduleSpecifier.text,
         specifierStart: start,
+        specifierEnd: statement.moduleSpecifier.getEnd(),
+        rawSpecifier: statement.moduleSpecifier.getText(sourceFile),
         line: sourceFile.getLineAndCharacterOfPosition(start).line + 1,
         sideEffectOnly: false,
         structuralKey: subtreeFingerprint(sourceFile, statement, start),

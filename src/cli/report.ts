@@ -1,4 +1,5 @@
 import type { AnalysisReport, Classification } from "../types.js";
+import type { SplitPlan } from "../planner/types.js";
 
 function label(item: Classification): string {
   const location = item.line ? `${item.path}:${item.line}` : item.path;
@@ -36,15 +37,35 @@ export function formatReport(report: AnalysisReport, verbose = false): string {
   ].join("\n");
 }
 
-export function formatDryRun(report: AnalysisReport, verbose = false): string {
+function formatPatch(label: string, metadata: SplitPlan["a"]["metadata"]): string {
+  return `  ${label}: ${metadata.files} files, ${metadata.bytes} bytes, sha256 ${metadata.sha256}`;
+}
+
+export function formatDryRun(plan: SplitPlan, verbose = false): string {
   return [
-    formatReport(report, verbose),
+    formatReport(plan.report, verbose),
     "",
     "Dry-run split plan:",
-    `  commit A candidates: ${report.behavioral.length + report.ambiguous.length}`,
-    `  commit B candidates: ${report.mechanical.length}`,
+    `  base commit: ${plan.baseCommit}`,
+    `  commit A candidates: ${plan.report.behavioral.length + plan.report.ambiguous.length}`,
+    `  commit B candidates: ${plan.report.mechanical.length}`,
+    formatPatch("commit-a.patch", plan.a.metadata),
+    formatPatch("commit-b.patch", plan.b.metadata),
     "  Git index modified: no",
+  ].join("\n");
+}
+
+export function formatWrittenPlan(
+  plan: SplitPlan,
+  outputDirectory: string,
+  verbose = false,
+): string {
+  return [
+    formatReport(plan.report, verbose),
     "",
-    "Phase 1 reports a safe plan only. Patch/index staging is scheduled for Phase 2.",
+    `Patch artifacts written to ${outputDirectory}`,
+    formatPatch("commit-a.patch", plan.a.metadata),
+    formatPatch("commit-b.patch", plan.b.metadata),
+    "Git index modified: no",
   ].join("\n");
 }

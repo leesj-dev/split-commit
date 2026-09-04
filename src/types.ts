@@ -6,6 +6,8 @@ export interface WorkingTreeChange {
   newPath?: string;
   oldContent?: string;
   newContent?: string;
+  oldMode?: string;
+  newMode?: string;
   gitSimilarity?: number;
   untracked?: boolean;
 }

@@ -12,6 +12,8 @@ import type { ProjectContext } from "../ts/projectLoader.js";
 interface ProvisionalMove extends ConfirmedMove {
   oldContent: string;
   newContent: string;
+  oldMode: string;
+  newMode: string;
 }
 
 function slash(filePath: string): string {
@@ -51,6 +53,8 @@ function makeProvisional(
   newPath: string,
   oldContent: string,
   newContent: string,
+  oldMode: string,
+  newMode: string,
 ): ProvisionalMove {
   return {
     oldPath: slash(oldPath),
@@ -60,6 +64,8 @@ function makeProvisional(
     sourceChange,
     oldContent,
     newContent,
+    oldMode,
+    newMode,
     reason: "",
     details: [],
   };
@@ -79,7 +85,9 @@ export function detectRenames(
       !change.oldPath ||
       !change.newPath ||
       change.oldContent === undefined ||
-      change.newContent === undefined
+      change.newContent === undefined ||
+      !change.oldMode ||
+      !change.newMode
     ) {
       rejected.set(change, "Git reported a rename, but one side could not be read");
       continue;
@@ -92,6 +100,8 @@ export function detectRenames(
         change.newPath,
         change.oldContent,
         change.newContent,
+        change.oldMode,
+        change.newMode,
       ),
     );
   }
@@ -121,7 +131,9 @@ export function detectRenames(
       oldChange?.oldPath &&
       newChange?.newPath &&
       oldChange.oldContent !== undefined &&
-      newChange.newContent !== undefined
+      newChange.newContent !== undefined &&
+      oldChange.oldMode &&
+      newChange.newMode
     ) {
       provisional.push(
         makeProvisional(
@@ -131,12 +143,26 @@ export function detectRenames(
           newChange.newPath,
           oldChange.oldContent,
           newChange.newContent,
+          oldChange.oldMode,
+          newChange.newMode,
         ),
       );
     }
   }
 
   const structurallyMatching = provisional.filter((move) => {
+    if (move.oldMode === "120000" || move.newMode === "120000") {
+      if (move.sourceChange) {
+        rejected.set(move.sourceChange, "Symbolic-link moves are not certified as mechanical");
+      }
+      return false;
+    }
+    if (move.oldMode !== move.newMode) {
+      if (move.sourceChange) {
+        rejected.set(move.sourceChange, "File mode changed during the rename");
+      }
+      return false;
+    }
     if (
       path.extname(move.oldPath).toLowerCase() !==
       path.extname(move.newPath).toLowerCase()

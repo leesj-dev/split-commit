@@ -35,9 +35,11 @@ JavaScript and TypeScript do not permit a general formal equivalence proof.
 Module initialization order, side-effect imports, dynamic imports,
 `import.meta`, `__dirname`, `__filename`, `require()`, reflection, string-based
 module references, and bundler-specific transforms can all be observable.
-Phase 1 therefore certifies a narrow set and rejects or defers everything else.
+The classifier therefore certifies a narrow set and rejects or defers everything else.
 
-## Phase 1
+## Implemented phases
+
+### Phase 1 — semantic classification
 
 Implemented:
 
@@ -53,14 +55,28 @@ Implemented:
 - mixed-file reporting: a proven import-path update can be B while the remaining
   AST edit in the same file is A
 - human-readable reasons, verbose resolution evidence, and JSON output
-- read-only split dry-run; the current Git index is never modified
 - end-to-end tests that create real temporary Git repositories
+
+### Phase 2 — patch generation and safe staging
+
+- sequential patch synthesis:
+  - `commit-a.patch`: `HEAD` → behavioral/ambiguous intermediate tree
+  - `commit-b.patch`: intermediate A tree → complete working-tree result
+- AST-span mixed-file splitting: only proven module specifiers are withheld from A
+- temporary Git indexes and `write-tree` verification for every generated state
+- temporary object databases, so report/dry-run/artifact planning does not add
+  unreachable objects to the analyzed repository
+- SHA-256, byte count, file count, base commit, and target tree IDs in a manifest
+- atomic artifact writes under `.semantic-split/` by default
+- `stage-a` and `stage-b` commands that preserve the complete working tree
+- clean-index precondition: existing staged changes are rejected without modification
+- enforced order: B cannot be staged while A candidates remain
+- file modes, symlinks, additions, deletions, renames, and binary Git patches
 
 Deliberately deferred to later phases:
 
 - symbol rename and reference-identity proof
 - declaration/function/class moves between files
-- patch synthesis and A/B index staging
 - automatic commits and validation hooks
 - standalone formatting/import-sort certification
 
@@ -75,6 +91,9 @@ semantic-split report
 semantic-split report --verbose
 semantic-split report --json
 semantic-split split --dry-run --verbose
+semantic-split split
+semantic-split stage-a
+semantic-split stage-b
 ```
 
 Run against another repository without changing directory:
@@ -84,8 +103,52 @@ semantic-split report --cwd /path/to/repository
 ```
 
 The repository needs an initial commit because analysis compares `HEAD` with
-the complete current working tree. `split` without `--dry-run` exits safely in
-Phase 1 rather than mutating the index.
+the complete current working tree.
+
+## Safe A → B workflow
+
+Start with a clean index. Staged, unstaged, and untracked working-tree content
+may be analyzed, but staging commands intentionally refuse a pre-existing index
+so they cannot overwrite the user's staged state.
+
+```bash
+# 1. Inspect classifications and generated patch metadata. No writes.
+semantic-split split --dry-run --verbose
+
+# 2. Optionally write sequential patches, report.json, and manifest.json.
+#    This does not touch the index.
+semantic-split split
+
+# 3. Stage only behavioral and ambiguous changes.
+semantic-split stage-a
+git diff --cached
+git commit -m "behavioral changes"
+
+# 4. Reanalyze against the new HEAD, then stage the mechanical remainder.
+semantic-split stage-b
+git diff --cached
+git commit -m "mechanical structural refactor"
+```
+
+`stage-b` must be rerun after committing A. If A candidates still exist, it
+exits without changing the index. Neither staging command commits automatically.
+
+### Patch artifacts
+
+By default `split` writes:
+
+```text
+.semantic-split/
+  commit-a.patch
+  commit-b.patch
+  manifest.json
+  report.json
+```
+
+Use `--output-dir <path>` to choose a different location. The B artifact is a
+sequential patch whose base is the A target tree, not an independent patch
+against the original `HEAD`. The manifest records this chain through tree IDs
+and patch hashes.
 
 ### Explanation example
 
@@ -129,7 +192,8 @@ src/
   git/          working-tree collection and conservative move detection
   ts/           project loading, AST normalization, module resolution
   classifier/   file move and import/export/barrel classification
-  cli/          report and read-only split plan
+  planner/      intermediate trees, sequential patches, artifact/stage orchestration
+  cli/          report, split, stage-a, and stage-b commands
 ```
 
 ## Development
@@ -141,5 +205,7 @@ npm test
 
 The test suite covers the 16 requested fixture classes, including aliases,
 relative imports, barrels, `index.ts`, cycles, mixed edits, unresolved imports,
-side-effect imports, and rename-like duplicate delete/recreate cases. Phase 3
-fixtures currently assert the conservative Phase 1 fallback to A.
+side-effect imports, and rename-like duplicate delete/recreate cases. It also
+creates real A/B commits, validates sequential artifacts, checks clean-index
+refusal, and proves that staging leaves the full working tree intact. Phase 3
+fixtures currently assert the conservative fallback to A.

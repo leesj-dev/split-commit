@@ -1,8 +1,16 @@
 {
   "name": "semantic-split",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Conservatively classify working-tree changes as behavioral or provably mechanical refactors.",
   "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
   "bin": {
     "semantic-split": "./dist/src/cli/index.js"
   },

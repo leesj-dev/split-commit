@@ -20,10 +20,20 @@ interface PairedReference {
 export interface ModuleUpdateAnalysis {
   mechanical: Classification[];
   ambiguous: Classification[];
+  mechanicalEdits: ModuleSpecifierEdit[];
   oldReplacements: Map<number, string>;
   newReplacements: Map<number, string>;
   allPairedOldReplacements: Map<number, string>;
   allPairedNewReplacements: Map<number, string>;
+}
+
+export interface ModuleSpecifierEdit {
+  oldStart: number;
+  oldEnd: number;
+  oldRaw: string;
+  newStart: number;
+  newEnd: number;
+  newRaw: string;
 }
 
 function pairChangedReferences(
@@ -77,6 +87,7 @@ export function analyzeModuleUpdates(
   const pairs = pairChangedReferences(oldReferences, newReferences);
   const mechanical: Classification[] = [];
   const ambiguous: Classification[] = [];
+  const mechanicalEdits: ModuleSpecifierEdit[] = [];
   const oldReplacements = new Map<number, string>();
   const newReplacements = new Map<number, string>();
   const allPairedOldReplacements = new Map<number, string>();
@@ -149,6 +160,14 @@ export function analyzeModuleUpdates(
 
     oldReplacements.set(oldReference.specifierStart, marker);
     newReplacements.set(newReference.specifierStart, marker);
+    mechanicalEdits.push({
+      oldStart: oldReference.specifierStart,
+      oldEnd: oldReference.specifierEnd,
+      oldRaw: oldReference.rawSpecifier,
+      newStart: newReference.specifierStart,
+      newEnd: newReference.specifierEnd,
+      newRaw: newReference.rawSpecifier,
+    });
     mechanical.push({
       side: "mechanical",
       kind: classificationKind(filePath, newReference),
@@ -166,6 +185,7 @@ export function analyzeModuleUpdates(
   return {
     mechanical,
     ambiguous,
+    mechanicalEdits,
     oldReplacements,
     newReplacements,
     allPairedOldReplacements,

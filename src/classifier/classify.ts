@@ -2,17 +2,19 @@ import path from "node:path";
 import type {
   AnalysisReport,
   Classification,
+  ConfirmedMove,
   WorkingTreeChange,
 } from "../types.js";
 import { collectChanges } from "../git/collectChanges.js";
 import { detectRenames } from "../git/detectRenames.js";
 import { isSourcePath } from "../ts/astNormalizer.js";
-import { loadProject } from "../ts/projectLoader.js";
+import { loadProject, type ProjectContext } from "../ts/projectLoader.js";
 import { classifyFileMove } from "./fileMove.js";
 import {
   analyzeModuleUpdates,
   hasAnyAstChange,
   hasBehavioralRemainder,
+  type ModuleUpdateAnalysis,
 } from "./importPathUpdate.js";
 
 function displayPath(change: WorkingTreeChange): string {
@@ -38,13 +40,24 @@ function behavioral(
   };
 }
 
-export function analyzeRepository(cwd = process.cwd()): AnalysisReport {
+export interface DetailedAnalysis {
+  root: string;
+  changes: WorkingTreeChange[];
+  project: ProjectContext;
+  moves: ConfirmedMove[];
+  rejectedMoves: Map<WorkingTreeChange, string>;
+  moduleAnalyses: Map<WorkingTreeChange, ModuleUpdateAnalysis>;
+  report: AnalysisReport;
+}
+
+export function analyzeRepositoryDetailed(cwd = process.cwd()): DetailedAnalysis {
   const { root, changes } = collectChanges(cwd);
   const project = loadProject(root, changes);
   const { confirmed: moves, rejected } = detectRenames(root, changes, project);
   const mechanical = moves.map(classifyFileMove);
   const behavioralChanges: Classification[] = [];
   const ambiguous: Classification[] = [];
+  const moduleAnalyses = new Map<WorkingTreeChange, ModuleUpdateAnalysis>();
 
   const consumedOldPaths = new Set(moves.map((move) => move.oldPath));
   const consumedNewPaths = new Set(moves.map((move) => move.newPath));
@@ -75,6 +88,7 @@ export function analyzeRepository(cwd = process.cwd()): AnalysisReport {
       change.newContent !== undefined
     ) {
       const moduleAnalysis = analyzeModuleUpdates(root, change, project, moves);
+      moduleAnalyses.set(change, moduleAnalysis);
       mechanical.push(...moduleAnalysis.mechanical);
       ambiguous.push(...moduleAnalysis.ambiguous);
 
@@ -134,5 +148,17 @@ export function analyzeRepository(cwd = process.cwd()): AnalysisReport {
     }
   }
 
-  return { root, mechanical, behavioral: behavioralChanges, ambiguous };
+  return {
+    root,
+    changes,
+    project,
+    moves,
+    rejectedMoves: rejected,
+    moduleAnalyses,
+    report: { root, mechanical, behavioral: behavioralChanges, ambiguous },
+  };
+}
+
+export function analyzeRepository(cwd = process.cwd()): AnalysisReport {
+  return analyzeRepositoryDetailed(cwd).report;
 }

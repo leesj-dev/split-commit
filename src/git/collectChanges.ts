@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
 import path from "node:path";
 import type { WorkingTreeChange } from "../types.js";
 import { runGit, tryGit } from "./runGit.js";
@@ -44,9 +44,26 @@ function readHeadFile(root: string, filePath: string): string {
   return runGit(root, ["show", `HEAD:${filePath}`]);
 }
 
+function readHeadMode(root: string, filePath: string): string | undefined {
+  const output = runGit(root, ["ls-tree", "HEAD", "--", filePath]).trim();
+  return output ? output.split(/\s+/, 1)[0] : undefined;
+}
+
 function readWorkingFile(root: string, filePath: string): string | undefined {
   const absolutePath = path.join(root, filePath);
-  return existsSync(absolutePath) ? readFileSync(absolutePath, "utf8") : undefined;
+  if (!existsSync(absolutePath)) return undefined;
+  return lstatSync(absolutePath).isSymbolicLink()
+    ? readlinkSync(absolutePath)
+    : readFileSync(absolutePath, "utf8");
+}
+
+function readWorkingMode(root: string, filePath: string): string | undefined {
+  const absolutePath = path.join(root, filePath);
+  if (!existsSync(absolutePath)) return undefined;
+  const stat = lstatSync(absolutePath);
+  if (stat.isSymbolicLink()) return "120000";
+  if (!stat.isFile()) return undefined;
+  return stat.mode & 0o111 ? "100755" : "100644";
 }
 
 export interface CollectedChanges {
@@ -78,6 +95,7 @@ export function collectChanges(cwd = process.cwd()): CollectedChanges {
     "ls-files",
     "--others",
     "--exclude-standard",
+    "--exclude=.semantic-split/**",
     "-z",
   ]);
   const untracked = untrackedOutput.split("\0").filter(Boolean);
@@ -106,10 +124,16 @@ export function collectChanges(cwd = process.cwd()): CollectedChanges {
   }
 
   for (const change of changes) {
-    if (change.oldPath) change.oldContent = readHeadFile(root, change.oldPath);
+    if (change.oldPath) {
+      change.oldContent = readHeadFile(root, change.oldPath);
+      const mode = readHeadMode(root, change.oldPath);
+      if (mode) change.oldMode = mode;
+    }
     if (change.newPath) {
       const content = readWorkingFile(root, change.newPath);
       if (content !== undefined) change.newContent = content;
+      const mode = readWorkingMode(root, change.newPath);
+      if (mode) change.newMode = mode;
     }
   }
 
