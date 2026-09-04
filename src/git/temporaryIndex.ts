@@ -1,11 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  closeSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readlinkSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -34,15 +37,27 @@ interface GitOptions {
   input?: Buffer;
 }
 
+const GIT_COMMAND_TIMEOUT_MS = 60_000;
+
 function gitBuffer(root: string, args: string[], options: GitOptions = {}): Buffer {
+  let inputDirectory: string | undefined;
+  let inputDescriptor: number | undefined;
   try {
+    if (options.input !== undefined) {
+      inputDirectory = mkdtempSync(path.join(tmpdir(), "split-commit-stdin-"));
+      const inputPath = path.join(inputDirectory, "input");
+      writeFileSync(inputPath, options.input, { mode: 0o600 });
+      inputDescriptor = openSync(inputPath, "r");
+    }
+
     return execFileSync("git", args, {
       cwd: root,
       encoding: "buffer",
       maxBuffer: 128 * 1024 * 1024,
-      stdio: ["pipe", "pipe", "pipe"],
+      timeout: GIT_COMMAND_TIMEOUT_MS,
+      killSignal: "SIGKILL",
+      stdio: [inputDescriptor ?? "ignore", "pipe", "pipe"],
       ...(options.env ? { env: options.env } : {}),
-      ...(options.input ? { input: options.input } : {}),
     });
   } catch (error) {
     const stderr =
@@ -50,6 +65,9 @@ function gitBuffer(root: string, args: string[], options: GitOptions = {}): Buff
         ? Buffer.from(error.stderr as Uint8Array).toString("utf8")
         : String(error);
     throw new Error(`git ${args.join(" ")} failed: ${stderr.trim()}`);
+  } finally {
+    if (inputDescriptor !== undefined) closeSync(inputDescriptor);
+    if (inputDirectory) rmSync(inputDirectory, { recursive: true, force: true });
   }
 }
 

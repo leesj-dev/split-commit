@@ -239,9 +239,15 @@ function main(): void {
   }
 
   const reviewer = reviewOptions(args);
+  if (process.stderr.isTTY) {
+    process.stderr.write("split-commit: building split plan...\n");
+  }
   const plan = buildSplitPlan(args.cwd, {
     ...(reviewer ? { reviewer } : {}),
   });
+  if (process.stderr.isTTY) {
+    process.stderr.write("split-commit: split plan ready.\n");
+  }
   if (args.dryRun) {
     if (args.command === "apply") {
       const messages = resolveCommitMessages(args.commitMessages);
